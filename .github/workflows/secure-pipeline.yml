@@ -1,0 +1,63 @@
+name: Secure DevSecOps Pipeline (Awash Demo)
+
+on:
+  push:
+    branches: [ "main", "demo-insecure", "demo-secure" ]
+
+jobs:
+  sast-semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep SAST
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/default
+
+  sca-snyk:
+    runs-on: ubuntu-latest
+    needs: sast-semgrep
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          cd app
+          npm install
+
+      - name: Run Snyk SCA
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
+  build-and-deploy-uat:
+    runs-on: ubuntu-latest
+    needs: sca-snyk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t devsecops-demo:latest ./app
+
+      - name: Deploy to Kubernetes UAT (Demo)
+        run: |
+          echo "Demo step: kubectl apply -f k8s/"
+          echo "In real setup, use kubeconfig secret and apply manifests"
+
+  dast-zap:
+    runs-on: ubuntu-latest
+    needs: build-and-deploy-uat
+    steps:
+      - name: OWASP ZAP Baseline Scan (Demo)
+        run: |
+          echo "Demo step: zap-baseline.py -t http://UAT_URL -r zap-report.html"
+          echo "In real demo, target the UAT ingress URL or port-forward endpoint"

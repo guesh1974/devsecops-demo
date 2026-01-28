@@ -1,0 +1,50 @@
+stages:
+  - sast
+  - sca
+  - build
+  - deploy
+  - dast
+
+variables:
+  DOCKER_DRIVER: overlay2
+
+semgrep_sast:
+  stage: sast
+  image: returntocorp/semgrep
+  script:
+    - semgrep --config=p/default app/ || exit 1
+
+snyk_sca:
+  stage: sca
+  image: node:20
+  script:
+    - cd app
+    - npm install
+    - npm install -g snyk
+    - snyk auth $SNYK_TOKEN
+    - snyk test --severity-threshold=high
+  only:
+    - branches
+
+docker_build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build -t devsecops-demo:latest ./app
+
+deploy_uat:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - echo "kubectl apply -f k8s/namespace.yaml"
+    - echo "kubectl apply -f k8s/"
+    - echo "Demo: use KUBECONFIG from GitLab CI variables"
+  when: on_success
+
+zap_dast:
+  stage: dast
+  image: owasp/zap2docker-stable
+  script:
+    - echo "zap-baseline.py -t http://UAT_URL -r zap-report.html"
